@@ -8,11 +8,11 @@ import io
 st.set_page_config(page_title="Tacirin eBayi", page_icon="🛍️", layout="wide")
 
 # Google Gemini AI Konfiqurasiyası
-API_KEY = "YOUR_GEMINI_API_KEY"  # Bura öz Gemini API Key-inizi daxil edin
+API_KEY = "AQ.Ab8RN6LeQ4FlOCgflkaDwddwktdxbbcvKWonbOiMSD6hkYe1yg"
 genai.configure(api_key=API_KEY)
 
 st.title("🛍️ Tacirin eBayi — Dropshipping Optimizasiya və eBay CSV Paneli")
-st.write("AliExpress məhsul linkini daxil edin, AI ilə optimize edin və tek kliklə eBay üçün hazır CSV faylı endirin.")
+st.write("AliExpress məhsul linkini daxil edin, AI ilə optimize edin və tək kliklə eBay üçün hazır CSV faylı endirin.")
 
 col1, col2 = st.columns([2, 1])
 
@@ -26,7 +26,7 @@ with col2:
 selling_price = round(cost_price * (1 + margin / 100), 2)
 st.info(f"💡 Tövsiyə olunan eBay Satış Qiyməti: **${selling_price}**")
 
-if st.button("🚀 Məhsulu Optimizasiya Et vər CSV Hazırla", type="primary"):
+if st.button("🚀 Məhsulu Optimizasiya Et və CSV Hazırla", type="primary"):
     if not url:
         st.warning("Zəhmət olmasa məhsul linkini daxil edin!")
     else:
