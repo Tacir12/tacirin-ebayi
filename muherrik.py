@@ -1,151 +1,87 @@
-import json
-import os
-import requests
-import pandas as pd
 import streamlit as st
-from bs4 import BeautifulSoup
 import google.generativeai as genai
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+import io
 
-# 🔑 API Açarın:
-API_KEY = "AQ.Ab8RN6LrmbukPOCEBXldBcVeLcY-4I18mx25iWzhAXrwjeo6Jw"
-genai.configure(api_key=API_KEY)
-
-EXCEL_FAYL_ADI = "ebay_mehsullar.xlsx"
-
-# Səhifə Ayarları (Saytın Adı Burada Dəyişdirildi)
 st.set_page_config(page_title="Tacirin eBayi", page_icon="🛍️", layout="wide")
 
-st.title("🛍️ Tacirin eBayi")
-st.write("Süni İntellekt vasitəsilə məhsul məlumatlarını eBay üçün optimizasiya edin və bazaya əlavə edin.")
+# Google Gemini AI Konfiqurasiyası
+API_KEY = "YOUR_GEMINI_API_KEY"  # Bura öz Gemini API Key-inizi daxil edin
+genai.configure(api_key=API_KEY)
 
-def mehsul_melumatlarini_cek(url):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-    try:
-        response = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.text, 'html.parser')
+st.title("🛍️ Tacirin eBayi — Dropshipping Optimizasiya və eBay CSV Paneli")
+st.write("AliExpress məhsul linkini daxil edin, AI ilə optimize edin və tek kliklə eBay üçün hazır CSV faylı endirin.")
 
-        basliq = ""
-        if soup.find('h1'):
-            basliq = soup.find('h1').text.strip()
-        elif soup.title:
-            basliq = soup.title.text.strip()
-
-        tesvir_metni = ""
-        paragraphs = soup.find_all('p')
-        for p in paragraphs[:5]:
-            if len(p.text.strip()) > 20:
-                tesvir_metni += p.text.strip() + " "
-
-        return {
-            "basliq": basliq if basliq else "Məhsul Başlığı",
-            "tesvir": tesvir_metni if tesvir_metni else "Məhsul haqqında ətraflı məlumat daxil edilməyib."
-        }
-    except Exception as e:
-        st.error(f"Linkdən məlumat çəkilərkən xəta oldu: {e}")
-        return None
-
-def ebay_si_muherriki(xam_basliq, xam_tesvir, xam_qiymet, qazanc_faizi):
-    son_qiymet = round(xam_qiymet * (1 + qazanc_faizi / 100), 2)
-
-    prompt = f"""
-    Sən peşəkar e-ticarət mütəxəssisisən. Məhsul məlumatlarını eBay üçün optimizasiya et.
-
-    MƏHSUL MƏLUMATLARI:
-    - Orijinal Başlıq: {xam_basliq}
-    - Orijinal Təsvir: {xam_tesvir}
-
-    TƏLƏBLƏR:
-    1. "ebay_title": Maksimum 80 simvol olsun, əsas açar sözləri əhatə etsin.
-    2. "ebay_description_html": Məhsulun üstünlüklərini göstərən təmiz HTML formatlı təsvir yaz.
-
-    YALNIZ bu JSON formatında cavab ver:
-    {{
-        "ebay_title": "...",
-        "ebay_description_html": "..."
-    }}
-    """
-
-    model = genai.GenerativeModel(
-        model_name='models/gemini-flash-latest',
-        generation_config={"response_mime_type": "application/json"}
-    )
-    
-    response = model.generate_content(prompt)
-    si_cavab = json.loads(response.text)
-
-    return {
-        "ebay_title": si_cavab["ebay_title"],
-        "orijinal_qiymet": xam_qiymet,
-        "satis_qiymeti": son_qiymet,
-        "qazanc_faizi": qazanc_faizi,
-        "ebay_description_html": si_cavab["ebay_description_html"]
-    }
-
-def excele_yaz(yeni_data):
-    df_new = pd.DataFrame([yeni_data])
-    if os.path.exists(EXCEL_FAYL_ADI):
-        df_old = pd.read_excel(EXCEL_FAYL_ADI)
-        df_final = pd.concat([df_old, df_new], ignore_index=True)
-    else:
-        df_final = df_new
-    df_final.to_excel(EXCEL_FAYL_ADI, index=False)
-
-# FORM
 col1, col2 = st.columns([2, 1])
 
 with col1:
     url = st.text_input("🔗 Məhsul Linki (URL):", placeholder="https://www.aliexpress.com/item/...")
 
 with col2:
-    alis_qiymeti = st.number_input("💰 Alış Qiyməti ($):", min_value=0.1, value=10.0, step=0.5)
-    qazanc_faizi = st.number_input("📈 Qazanc Faizi (%):", min_value=1.0, value=30.0, step=1.0)
+    cost_price = st.number_input("💰 Alış Qiyməti ($):", min_value=0.0, value=10.0, step=0.5)
+    margin = st.number_input("📈 Qazanc Faizi (%):", min_value=0.0, value=30.0, step=5.0)
 
-# DÜYMƏ VƏ NƏTİCƏLƏR
-if st.button("🚀 Məhsulu Optimizasiya Et", type="primary"):
+selling_price = round(cost_price * (1 + margin / 100), 2)
+st.info(f"💡 Tövsiyə olunan eBay Satış Qiyməti: **${selling_price}**")
+
+if st.button("🚀 Məhsulu Optimizasiya Et vər CSV Hazırla", type="primary"):
     if not url:
         st.warning("Zəhmət olmasa məhsul linkini daxil edin!")
     else:
-        with st.spinner("Məlumatlar çəkilir və Sİ tərəfindən optimizasiya olunur..."):
-            cekilen_data = mehsul_melumatlarini_cek(url)
-            
-            if cekilen_data:
-                netice = ebay_si_muherriki(
-                    cekilen_data["basliq"], 
-                    cekilen_data["tesvir"], 
-                    alis_qiymeti, 
-                    qazanc_faizi
-                )
-
-                excel_data = {
-                    "Məhsul Linki": url,
-                    "eBay Başlıq": netice["ebay_title"],
-                    "Alış Qiyməti ($)": netice["orijinal_qiymet"],
-                    "Satış Qiyməti ($)": netice["satis_qiymeti"],
-                    "Mənfəət (%)": netice["qazanc_faizi"],
-                    "HTML Description": netice["ebay_description_html"]
-                }
-                excele_yaz(excel_data)
-
-                st.success("✅ Optimizasiya tamamlandı və Excel faylına yadda saxlanıldı!")
+        with st.spinner("Məhsul məlumatları analiz edilir və eBay üçün hazırlanır..."):
+            try:
+                # AI vasitəsilə SEO Optimizasiyası
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                prompt = f"""
+                Mən eBay-də dropshipping ilə məhsul satıram. 
+                Aşağıdakı məhsul linkindən/mövzusundan istifadə edərək eBay üçün mükəmməl listing hazırla.
                 
-                # Səliqəli Nəticə Bölməsi
-                st.subheader("📌 Optimizasiya Edilmiş eBay Başlığı")
-                st.code(netice["ebay_title"], language="text")
-
-                st.subheader("💰 Qiymət Hesablanması")
-                st.info(f"Alış Qiyməti: ${netice['orijinal_qiymet']}  ➔  Satış Qiyməti: ${netice['satis_qiymeti']}  (Mənfəət: %{netice['qazanc_faizi']})")
-
-                st.subheader("📝 Hazır HTML Təsvir (Description)")
-                st.code(netice["ebay_description_html"], language="html")
-
-# CƏDVƏL BAZASI
-st.divider()
-st.subheader("📊 Saxlanılmış Məhsullar BAZASI (Excel)")
-
-if os.path.exists(EXCEL_FAYL_ADI):
-    df = pd.read_excel(EXCEL_FAYL_ADI)
-    st.dataframe(df, use_container_width=True)
-else:
-    st.write("Hələ ki saxlanılmış məhsul yoxdur.")
+                Link: {url}
+                
+                Mənə cavabı tam olaraq bu 3 hissədə ver:
+                1. Optimized_Title: (Maksimum 80 simvol, yüksək axtarışlı SEO açar sözlərlə ingiliscə başlıq)
+                2. Item_Specifics: (Məhsulun xüsusiyyətləri: Brand, Type, Material, Color və s.)
+                3. HTML_Description: (eBay üçün gözəl formatlanmış HTML təsvir mətni)
+                """
+                
+                response = model.generate_content(prompt)
+                ai_output = response.text
+                
+                st.success("Məhsul uğurla optimizasiya olundu!")
+                st.markdown("### 📝 AI Tərəfindən Hazırlanmış Məhsul Məlumatı")
+                st.write(ai_output)
+                
+                # eBay File Exchange / Bulk Upload üçün CSV strukturunun yaradılması
+                ebay_data = {
+                    "Action": ["Add"],
+                    "Category": ["1"], # Kateqoriya ID
+                    "Title": [f"Optimized Listing for {url[:30]}"],
+                    "Relationship": [""],
+                    "RelationshipDetails": [""],
+                    "PicURL": [""],
+                    "CostPrice": [cost_price],
+                    "Price": [selling_price],
+                    "Quantity": [10],
+                    "Format": ["FixedPrice"],
+                    "Duration": ["GTC"],
+                    "Location": ["China"],
+                    "Description": [ai_output]
+                }
+                
+                df = pd.DataFrame(ebay_data)
+                
+                # CSV faylının hazırlanması
+                csv_buffer = io.StringIO()
+                df.to_csv(csv_buffer, index=False)
+                
+                st.download_button(
+                    label="📥 eBay Üçün Hazır CSV Faylını Endir",
+                    data=csv_buffer.getvalue(),
+                    file_name="ebay_dropshipping_listing.csv",
+                    mime="text/csv"
+                )
+                
+            except Exception as e:
+                st.error(f"Xəta baş verdi: {e}")
