@@ -113,6 +113,18 @@ def extract_aliexpress_data(product_url):
     except Exception as e:
         return {"error": f"Xəta baş verdi: {str(e)}"}
 
+def optimize_ebay_title(raw_title):
+    # Lazımsız simvolları və təkrarları təmizləyirik, max 80 simvol saxlayırıq
+    clean_title = re.sub(r'[^\w\s\-\.\,\/]', '', raw_title)
+    words = clean_title.split()
+    optimized = ""
+    for word in words:
+        if len(optimized + " " + word) <= 80:
+            optimized += (" " if optimized else "") + word
+        else:
+            break
+    return optimized if optimized else raw_title[:80]
+
 # ==========================================
 # AUTO-DS STİLİNDƏ SOL MENYU (SIDEBAR)
 # ==========================================
@@ -156,22 +168,29 @@ if menu == "➕ Ürün Ekle (Məhsul Əlavə Et)":
         if not url:
             st.warning("Zəhmət olmasa məhsul linkini daxil edin!")
         else:
-            with st.spinner("Məhsul mühərriklə oxunur..."):
+            with st.spinner("AliExpress mühərriklə oxunur və şəkillər çəkilir..."):
                 data = extract_aliexpress_data(url)
                 
                 if "error" in data or not data.get("title"):
                     item_id = url.split("item/")[-1].split(".html")[0] if "item/" in url else "Product"
-                    title = f"New Trending Product High Quality Item {item_id[:10]}"
-                    img_url = ""
+                    raw_title = f"New Trending Product High Quality Item {item_id[:10]}"
+                    pic_urls = ""
                 else:
-                    title = data["title"]
-                    img_url = data["images"][0] if data["images"] else ""
+                    raw_title = data["title"]
+                    # Şəkilləri eBay formatına uyğun pipe (|) simvolu ilə birləşdiririk
+                    pic_urls = "|".join(data["images"]) if data["images"] else ""
 
-                description_html = f"<h2>{title}</h2><p>Original Link: {url}</p><p>Fast Shipping Guaranteed.</p>"
+                opt_title = optimize_ebay_title(raw_title)
+
+                description_html = f"""
+                <h2>{opt_title}</h2>
+                <p>High quality product with fast shipping.</p>
+                <p>Original Supplier Link: {url}</p>
+                """
                 
                 ebay_data = {
                     "Action": ["Draft"],
-                    "Title": [title[:80]],
+                    "Title": [opt_title],
                     "Description": [description_html],
                     "Price": [selling_price],
                     "Quantity": [10],
@@ -179,7 +198,7 @@ if menu == "➕ Ürün Ekle (Məhsul Əlavə Et)":
                     "Duration": ["GTC"],
                     "Location": ["China"],
                     "ConditionID": ["1000"],
-                    "PicURL": [img_url]
+                    "PicURL": [pic_urls]
                 }
                 
                 df = pd.DataFrame(ebay_data)
@@ -187,7 +206,10 @@ if menu == "➕ Ürün Ekle (Məhsul Əlavə Et)":
                 csv_buffer = io.StringIO()
                 df.to_csv(csv_buffer, index=False)
                 
-                st.success("Məhsul uğurla hazırlandı!")
+                st.success("Məhsul və çoxlu şəkillər uğurla CSV-yə yazıldı!")
+                st.subheader("📌 Optimizasiya Edilmiş eBay Başlığı:")
+                st.code(opt_title)
+                
                 st.download_button(
                     label="📥 eBay Üçün Hazır CSV Faylını Endir",
                     data=csv_buffer.getvalue(),
