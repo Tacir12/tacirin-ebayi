@@ -45,7 +45,6 @@ st.markdown("""
 SCRAPER_API_KEY = "d3ab337034b045efc43041d0281f2c4b"
 
 def extract_aliexpress_data(product_url):
-    # .us və ya fərqli domenlər standart .com-a çevrilir, artıq parametrlər təmizlənir
     item_id_match = re.search(r'item/(\d+)\.html', product_url)
     if not item_id_match:
         item_id_match = re.search(r'(\d{10,})', product_url)
@@ -55,7 +54,6 @@ def extract_aliexpress_data(product_url):
     else:
         clean_url = product_url.split('?')[0].replace("aliexpress.us", "aliexpress.com")
     
-    # Sürətli yüklənmə üçün render-i ləğv etdik
     payload = {
         'api_key': SCRAPER_API_KEY,
         'url': clean_url
@@ -88,12 +86,23 @@ def extract_aliexpress_data(product_url):
 
         title = re.sub(r' - AliExpress.*', '', title) if title else "Başlıq tapılmadı"
 
-        # 2. HD Şəkilləri tapmaq
+        # 2. HD Şəkilləri tapmaq (Genişləndirilmiş Axtarış)
         images = []
-        img_matches = re.findall(r'https://ae01\.alicdn\.com/kf/[A-Za-z0-9_\-]+\.jpg', html)
+        
+        # Meta og:image-dən əsas şəkli alırıq
+        og_image = soup.find("meta", property="og:image")
+        if og_image and og_image.get("content"):
+            main_img = og_image.get("content").split('_')[0]
+            if not main_img.startswith('http'):
+                main_img = 'https:' + main_img
+            images.append(main_img)
+            
+        # HTML daxilindəki bütün alicdn şəkillərini regex ilə yığırıq (.jpg, .png, .webp)
+        img_matches = re.findall(r'(?:https?:)?//ae01\.alicdn\.com/kf/[A-Za-z0-9_\-]+\.(?:jpg|png|webp)', html)
         
         for img in img_matches:
-            clean_img = img.split('_')[0] if '_' in img else img
+            full_img_url = img if img.startswith('http') else 'https:' + img
+            clean_img = full_img_url.split('_')[0]
             if clean_img not in images and not clean_img.endswith(".png"):
                 images.append(clean_img)
 
