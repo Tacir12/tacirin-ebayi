@@ -86,10 +86,9 @@ def extract_aliexpress_data(product_url):
 
         title = re.sub(r' - AliExpress.*', '', title) if title else "Başlıq tapılmadı"
 
-        # 2. HD Şəkilləri tapmaq (Genişləndirilmiş Axtarış)
+        # 2. HD Şəkilləri tapmaq
         images = []
         
-        # Meta og:image-dən əsas şəkli alırıq
         og_image = soup.find("meta", property="og:image")
         if og_image and og_image.get("content"):
             main_img = og_image.get("content").split('_')[0]
@@ -97,7 +96,6 @@ def extract_aliexpress_data(product_url):
                 main_img = 'https:' + main_img
             images.append(main_img)
             
-        # HTML daxilindəki bütün alicdn şəkillərini regex ilə yığırıq (.jpg, .png, .webp)
         img_matches = re.findall(r'(?:https?:)?//ae01\.alicdn\.com/kf/[A-Za-z0-9_\-]+\.(?:jpg|png|webp)', html)
         
         for img in img_matches:
@@ -225,7 +223,10 @@ elif menu == "🕷️ AliExpress Scraper Test":
                         cols = st.columns(4)
                         for idx, img_link in enumerate(data["images"]):
                             with cols[idx % 4]:
-                                st.image(img_link, use_column_width=True)
+                                try:
+                                    st.image(img_link, use_container_width=True)
+                                except Exception:
+                                    pass
                     else:
                         st.info("Şəkil tapılmadı.")
 
