@@ -45,19 +45,27 @@ st.markdown("""
 SCRAPER_API_KEY = "d3ab337034b045efc43041d0281f2c4b"
 
 def extract_aliexpress_data(product_url):
-    clean_url = product_url.replace("aliexpress.us", "aliexpress.com")
+    # .us və ya fərqli domenlər standart .com-a çevrilir, artıq parametrlər təmizlənir
+    item_id_match = re.search(r'item/(\d+)\.html', product_url)
+    if not item_id_match:
+        item_id_match = re.search(r'(\d{10,})', product_url)
+        
+    if item_id_match:
+        clean_url = f"https://www.aliexpress.com/item/{item_id_match.group(1)}.html"
+    else:
+        clean_url = product_url.split('?')[0].replace("aliexpress.us", "aliexpress.com")
     
+    # Sürətli yüklənmə üçün render-i ləğv etdik
     payload = {
         'api_key': SCRAPER_API_KEY,
-        'url': clean_url,
-        'render': 'true'
+        'url': clean_url
     }
     
     try:
-        response = requests.get('http://api.scraperapi.com', params=payload, timeout=30)
+        response = requests.get('http://api.scraperapi.com', params=payload, timeout=60)
         
         if response.status_code != 200:
-            return {"error": f"API Xətası: {response.status_code}. API Key düzgünlüyünü yoxlayın."}
+            return {"error": f"API Xətası: {response.status_code}. Məlumat alınamadı."}
             
         html = response.text
         soup = BeautifulSoup(html, "html.parser")
@@ -69,14 +77,14 @@ def extract_aliexpress_data(product_url):
             title = og_title.get("content")
             
         if not title:
-            h1 = soup.find("h1")
-            if h1:
-                title = h1.get_text().strip()
-                
-        if not title:
             title_match = re.search(r'"subject":"([^"]+)"', html)
             if title_match:
                 title = title_match.group(1)
+
+        if not title:
+            h1 = soup.find("h1")
+            if h1:
+                title = h1.get_text().strip()
 
         title = re.sub(r' - AliExpress.*', '', title) if title else "Başlıq tapılmadı"
 
@@ -86,7 +94,7 @@ def extract_aliexpress_data(product_url):
         
         for img in img_matches:
             clean_img = img.split('_')[0] if '_' in img else img
-            if clean_img not in images:
+            if clean_img not in images and not clean_img.endswith(".png"):
                 images.append(clean_img)
 
         return {
@@ -193,7 +201,7 @@ elif menu == "🕷️ AliExpress Scraper Test":
         if not url_scraper:
             st.warning("Zəhmət olmasa link daxil edin!")
         else:
-            with st.spinner("ScraperAPI vasitəsilə AliExpress oxunur (bu 5-10 saniyə çəkə bilər)..."):
+            with st.spinner("AliExpress oxunur (bir neçə saniyə çəkə bilər)..."):
                 data = extract_aliexpress_data(url_scraper)
                 
                 if "error" in data:
