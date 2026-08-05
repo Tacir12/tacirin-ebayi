@@ -40,70 +40,63 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# GÜCLƏNDİRİLMİŞ ALIEXPRESS SCRAPER
+# SCRAPERAPI İLƏ ALIEXPRESS MÜHƏRRİKİ
 # ==========================================
+SCRAPER_API_KEY = "d3ab337034b045efc43041d0281f2c4b"
+
 def extract_aliexpress_data(product_url):
-    # Linkdən Məhsul ID-sini çıxarırıq
-    item_id_match = re.search(r'item/(\d+)\.html', product_url)
-    if not item_id_match:
-        item_id_match = re.search(r'(\d{10,})', product_url)
-        
-    if not item_id_match:
-        return {"error": "Məhsul ID-si linkdən tapılmadı. Düzgün AliExpress linki daxil edin."}
+    clean_url = product_url.replace("aliexpress.us", "aliexpress.com")
     
-    item_id = item_id_match.group(1)
-    
-    # AliExpress Mobil və ya H5 API endpointi
-    api_url = f"https://m.aliexpress.com/api/detail/v2?productId={item_id}"
-    
-    headers = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
-        "Referer": "https://m.aliexpress.com/"
+    payload = {
+        'api_key': SCRAPER_API_KEY,
+        'url': clean_url,
+        'render': 'true'
     }
     
     try:
-        response = requests.get(api_url, headers=headers, timeout=12)
-        if response.status_code == 200:
-            res_json = response.json()
-            data = res_json.get("data", {})
-            title = data.get("titleModule", {}).get("subject")
-            images = data.get("imageModule", {}).get("imagePathList", [])
+        response = requests.get('http://api.scraperapi.com', params=payload, timeout=30)
+        
+        if response.status_code != 200:
+            return {"error": f"API Xətası: {response.status_code}. API Key düzgünlüyünü yoxlayın."}
             
-            if title and images:
-                return {
-                    "status": "success",
-                    "title": title,
-                    "images": images
-                }
-    except Exception:
-        pass
+        html = response.text
+        soup = BeautifulSoup(html, "html.parser")
         
-    # Əgər Mobil API bloklansa, Birbaşa HTML Regex Axtarışı
-    try:
-        clean_url = f"https://www.aliexpress.com/item/{item_id}.html"
-        headers_web = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        }
-        res = requests.get(clean_url, headers=headers_web, timeout=12)
-        html = res.text
-        
-        # Title regex
-        title_match = re.search(r'"subject":"([^"]+)"', html)
-        title = title_match.group(1) if title_match else None
-        
-        # Image regex
-        images = list(set(re.findall(r'https://ae01\.alicdn\.com/kf/[A-Za-z0-9_\-]+\.jpg', html)))
-        
-        if title:
-            return {
-                "status": "success",
-                "title": title,
-                "images": images[:8]
-            }
-    except Exception as e:
-        return {"error": str(e)}
+        # 1. Başlıq tapmaq
+        title = None
+        og_title = soup.find("meta", property="og:title")
+        if og_title and og_title.get("content"):
+            title = og_title.get("content")
+            
+        if not title:
+            h1 = soup.find("h1")
+            if h1:
+                title = h1.get_text().strip()
+                
+        if not title:
+            title_match = re.search(r'"subject":"([^"]+)"', html)
+            if title_match:
+                title = title_match.group(1)
 
-    return {"error": "AliExpress bloklamasına görə məlumat çəkilə bilmədi. Proxy və ya Scraper API istifadə etmək lazımdır."}
+        title = re.sub(r' - AliExpress.*', '', title) if title else "Başlıq tapılmadı"
+
+        # 2. HD Şəkilləri tapmaq
+        images = []
+        img_matches = re.findall(r'https://ae01\.alicdn\.com/kf/[A-Za-z0-9_\-]+\.jpg', html)
+        
+        for img in img_matches:
+            clean_img = img.split('_')[0] if '_' in img else img
+            if clean_img not in images:
+                images.append(clean_img)
+
+        return {
+            "status": "success",
+            "title": title,
+            "images": images[:8]
+        }
+
+    except Exception as e:
+        return {"error": f"Xəta baş verdi: {str(e)}"}
 
 # ==========================================
 # AUTO-DS STİLİNDƏ SOL MENYU (SIDEBAR)
@@ -148,7 +141,7 @@ if menu == "➕ Ürün Ekle (Məhsul Əlavə Et)":
         if not url:
             st.warning("Zəhmət olmasa məhsul linkini daxil edin!")
         else:
-            with st.spinner("Məhsul oxunur..."):
+            with st.spinner("Məhsul mühərriklə oxunur..."):
                 data = extract_aliexpress_data(url)
                 
                 if "error" in data or not data.get("title"):
@@ -200,7 +193,7 @@ elif menu == "🕷️ AliExpress Scraper Test":
         if not url_scraper:
             st.warning("Zəhmət olmasa link daxil edin!")
         else:
-            with st.spinner("AliExpress API ilə məlumatlar çəkilir..."):
+            with st.spinner("ScraperAPI vasitəsilə AliExpress oxunur (bu 5-10 saniyə çəkə bilər)..."):
                 data = extract_aliexpress_data(url_scraper)
                 
                 if "error" in data:
