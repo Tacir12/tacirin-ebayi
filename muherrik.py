@@ -43,6 +43,7 @@ st.markdown("""
 # SCRAPERAPI İLƏ ALIEXPRESS MÜHƏRRİKİ
 # ==========================================
 SCRAPER_API_KEY = "d3ab337034b045efc43041d0281f2c4b"
+EBAY_OAUTH_TOKEN = st.secrets.get("EBAY_OAUTH_TOKEN", "")
 
 def extract_aliexpress_data(product_url):
     item_id_match = re.search(r'item/(\d+)\.html', product_url)
@@ -88,7 +89,6 @@ def extract_aliexpress_data(product_url):
 
         # 2. HD Şəkilləri tapmaq
         images = []
-        
         og_image = soup.find("meta", property="og:image")
         if og_image and og_image.get("content"):
             main_img = og_image.get("content").split('_')[0]
@@ -114,7 +114,6 @@ def extract_aliexpress_data(product_url):
         return {"error": f"Xəta baş verdi: {str(e)}"}
 
 def optimize_ebay_title(raw_title):
-    # Lazımsız simvolları və təkrarları təmizləyirik, max 80 simvol saxlayırıq
     clean_title = re.sub(r'[^\w\s\-\.\,\/]', '', raw_title)
     words = clean_title.split()
     optimized = ""
@@ -124,6 +123,69 @@ def optimize_ebay_title(raw_title):
         else:
             break
     return optimized if optimized else raw_title[:80]
+
+def build_official_ebay_csv(title, description, price, pic_urls):
+    """eBay Reports / File Exchange standartlarına 100% uyğun CSV generasiya edir"""
+    headers = [
+        "*Action(SiteID=US|PT=1|Format=FixedPrice)",
+        "CustomLabel",
+        "*Category",
+        "*Title",
+        "Subtitle",
+        "*Relationship",
+        "*RelationshipDetails",
+        "*P:UPC",
+        "*P:ISBN",
+        "*P:EAN",
+        "*P:EPID",
+        "StartPrice",
+        "*Quantity",
+        "*Format",
+        "*Duration",
+        "PicURL",
+        "Description",
+        "*Location",
+        "ShippingService-1:Option",
+        "ShippingService-1:Cost",
+        "*DispatchTimeMax",
+        "*ReturnsAcceptedOption",
+        "RefundOption",
+        "ReturnsWithinOption",
+        "ShippingCostPaidByOption"
+    ]
+    
+    data_row = [
+        "Draft",  # Action
+        f"TACIR-{int(re.sub(r'\D', '', title)[:8] or 100000)}",  # CustomLabel (SKU)
+        "1",  # Category (Sistem avtomatik seçəcək)
+        title[:80],  # Title
+        "",  # Subtitle
+        "",  # Relationship
+        "",  # RelationshipDetails
+        "Does not apply",  # UPC
+        "Does not apply",  # ISBN
+        "Does not apply",  # EAN
+        "",  # EPID
+        str(price),  # StartPrice
+        "10",  # Quantity
+        "FixedPrice",  # Format
+        "GTC",  # Duration
+        pic_urls,  # PicURL
+        description,  # Description
+        "China",  # Location
+        "StandardShipping",  # Shipping Option
+        "0.00",  # Shipping Cost
+        "3",  # DispatchTimeMax
+        "ReturnsAccepted",  # Returns
+        "MoneyBack",  # RefundOption
+        "Days_30",  # ReturnsWithinOption
+        "Buyer"  # ShippingCostPaidByOption
+    ]
+    
+    df = pd.DataFrame([data_row], columns=headers)
+    csv_buffer = io.StringIO()
+    df.to_csv(csv_buffer, index=False)
+    return csv_buffer.getvalue()
 
 # ==========================================
 # AUTO-DS STİLİNDƏ SOL MENYU (SIDEBAR)
@@ -146,11 +208,11 @@ with st.sidebar:
     st.info("💡 Telefonla daxil olarkən sol yuxarıdakı **`>`** oxuna basaraq menyunu aça bilərsiniz.")
 
 # ==========================================
-# BÖLMƏ 1: MƏHSUL ƏLAVƏ ET VƏ CSV GENERATORU
+# BÖLMƏ 1: MƏHSUL ƏLAVƏ ET VƏ CSV PANELSİ
 # ==========================================
 if menu == "➕ Ürün Ekle (Məhsul Əlavə Et)":
-    st.title("🛍️ Tacirin eBayi — Dropshipping Optimizasiya və CSV Paneli")
-    st.write("AliExpress məhsul linkini daxil edin və tək kliklə eBay üçün hazır CSV faylı endirin.")
+    st.title("🛍️ Tacirin eBayi — Dropshipping Optimizasiya Paneli")
+    st.write("AliExpress məhsul linkini daxil edin, qiyməti təyin edin və rəsmi eBay CSV faylını endirin.")
 
     col1, col2 = st.columns([2, 1])
 
@@ -164,58 +226,33 @@ if menu == "➕ Ürün Ekle (Məhsul Əlavə Et)":
     selling_price = round(cost_price * (1 + margin / 100), 2)
     st.info(f"💡 Tövsiyə olunan eBay Satış Qiyməti: **${selling_price}**")
 
-    if st.button("🚀 Məhsulu Optimizasiya Et və CSV Hazırla", type="primary"):
+    st.write("---")
+
+    if st.button("🚀 Rəsmi eBay CSV Faylını Hazırla və Endir", type="primary"):
         if not url:
             st.warning("Zəhmət olmasa məhsul linkini daxil edin!")
         else:
-            with st.spinner("AliExpress mühərriklə oxunur və şəkillər çəkilir..."):
+            with st.spinner("Məhsul oxunur və Rəsmi eBay CSV-si hazırlanır..."):
                 data = extract_aliexpress_data(url)
                 
                 if "error" in data or not data.get("title"):
-                    item_id = url.split("item/")[-1].split(".html")[0] if "item/" in url else "Product"
-                    raw_title = f"New Trending Product High Quality Item {item_id[:10]}"
-                    pic_urls = ""
+                    st.error("Məhsul məlumatı çəkilə bilmədi.")
                 else:
-                    raw_title = data["title"]
-                    # Şəkilləri eBay formatına uyğun pipe (|) simvolu ilə birləşdiririk
-                    pic_urls = "|".join(data["images"]) if data["images"] else ""
-
-                opt_title = optimize_ebay_title(raw_title)
-
-                description_html = f"""
-                <h2>{opt_title}</h2>
-                <p>High quality product with fast shipping.</p>
-                <p>Original Supplier Link: {url}</p>
-                """
-                
-                ebay_data = {
-                    "Action": ["Draft"],
-                    "Title": [opt_title],
-                    "Description": [description_html],
-                    "Price": [selling_price],
-                    "Quantity": [10],
-                    "Format": ["FixedPrice"],
-                    "Duration": ["GTC"],
-                    "Location": ["China"],
-                    "ConditionID": ["1000"],
-                    "PicURL": [pic_urls]
-                }
-                
-                df = pd.DataFrame(ebay_data)
-                
-                csv_buffer = io.StringIO()
-                df.to_csv(csv_buffer, index=False)
-                
-                st.success("Məhsul və çoxlu şəkillər uğurla CSV-yə yazıldı!")
-                st.subheader("📌 Optimizasiya Edilmiş eBay Başlığı:")
-                st.code(opt_title)
-                
-                st.download_button(
-                    label="📥 eBay Üçün Hazır CSV Faylını Endir",
-                    data=csv_buffer.getvalue(),
-                    file_name="ebay_dropshipping_listing.csv",
-                    mime="text/csv"
-                )
+                    raw_title = data.get("title", "Product")
+                    opt_title = optimize_ebay_title(raw_title)
+                    pic_urls = "|".join(data.get("images", []))
+                    
+                    description_html = f"<h2>{opt_title}</h2><p>High Quality Product - Fast Shipping</p>"
+                    
+                    csv_data = build_official_ebay_csv(opt_title, description_html, selling_price, pic_urls)
+                    
+                    st.success("Rəsmi eBay şablonuna uyğun CSV uğurla yaradıldı!")
+                    st.download_button(
+                        label="📥 ebay_official_template.csv Faylını Endir",
+                        data=csv_data,
+                        file_name="ebay_official_template.csv",
+                        mime="text/csv"
+                    )
 
 # ==========================================
 # BÖLMƏ 2: ALIEXPRESS SCRAPER TEST
